@@ -1,4 +1,3 @@
-import React, {useState} from 'react';
 import {InboxOutlined} from '@ant-design/icons';
 import {message, Upload} from 'antd';
 import JSZip from "jszip";
@@ -35,10 +34,9 @@ const props = {
 };
 
 export function ZipUploader({setPngDataUrl}) {
-    const [errorMessage, setErrorMessage] = useState('');
+
     const acceptFile = async (zipFile) => {
         if (!zipFile) {
-            setErrorMessage('Please upload a ZIP file.');
             return;
         }
         const zip = new JSZip();
