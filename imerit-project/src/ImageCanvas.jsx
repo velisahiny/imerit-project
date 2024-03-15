@@ -161,7 +161,8 @@ export function ImageCanvas({imageURL}) {
                 <Col flex={1}>
                     <Flex vertical>
                         <ColorPicker showText value={color} onChange={(value, hex) => setColor(hex)}/>
-                        <Radio.Group onChange={onDrawingTypeChange} optionType="button" buttonStyle="solid"
+                        <Radio.Group defaultValue={"Pen"} onChange={onDrawingTypeChange} optionType="button"
+                                     buttonStyle="solid"
                                      options={options}/>
                         <Button onClick={handleExport}>Export</Button>
                         <Button onClick={handleExportMask}>Export Mask File</Button>
