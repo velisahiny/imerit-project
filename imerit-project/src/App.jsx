@@ -1,20 +1,20 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import {useState} from 'react'
 import './App.css'
 import {ImageCanvas} from "./ImageCanvas.jsx";
-import {ImageForm} from "./ImageForm.jsx";
-import useImage from 'use-image';
-const imagePath= "https://konvajs.org/assets/lion.png";
+import {ZipUploader} from "./ZipUploader.jsx";
+
+const imagePath = "https://konvajs.org/assets/lion.png";
+
 function App() {
-    const [image]= useImage(imagePath);
+    const [pngDataUrl, setPngDataUrl] = useState('');
 
     return (
-    <div>
-        {image? <ImageCanvas propImage={image}></ImageCanvas>:null}
-        <ImageForm></ImageForm>
-    </div>
-  )
+        <>
+            {pngDataUrl ? <ImageCanvas imageURL={pngDataUrl}/> :
+                <ZipUploader setPngDataUrl={setPngDataUrl}/>
+            }
+        </>
+    )
 }
 
 export default App

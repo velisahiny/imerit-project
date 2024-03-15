@@ -1,26 +1,69 @@
-import React, {useCallback, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Image as KanvaImage, Layer, Line, Rect, Stage} from "react-konva";
-import {Button, Upload} from "antd";
+import {Button, Col, ColorPicker, Flex, Radio, Row} from "antd";
+import JSZip from "jszip";
+import PropTypes from "prop-types";
 
-export const DrawAction ={
-    Scribble:"scribble"
+export const DrawAction = {
+    Pen: "Pen",
+    Brush: "Brush"
+}
+const options = [
+    {label: DrawAction.Pen, value: DrawAction.Pen},
+    {label: DrawAction.Brush, value: DrawAction.Brush}
+];
+const strokeWidths = {
+    [DrawAction.Pen]: 4,
+    [DrawAction.Brush]: 8
 }
 const SIZE = 500;
-function downloadURI(uri, name) {
-    var link = document.createElement('a');
-    link.download = name;
-    link.href = uri;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
-export const ImageCanvas = React.memo(function Paint({propImage}) {
-    const [color, setColor] = useState("#000");
-    const [drawAction, setDrawAction] = useState(DrawAction.Scribble);
-    const [image, setImage] = useState();
-    const[scribbles,setScribbles]=useState([]);
 
-    const fileRef = useRef(null);
+
+function downloadZip(dataURL, name) {
+    // Create a new zip file
+    const zip = new JSZip();
+
+    // Add the exported image to the zip file
+    zip.file(`${name}.png`, dataURL.substr(dataURL.indexOf(',') + 1), {base64: true});
+
+    // Generate the zip content
+    zip.generateAsync({type: 'blob'}).then(content => {
+        // Create a temporary link element to trigger the download
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = `${name}.zip`;
+        link.click();
+    });
+}
+
+
+export function ImageCanvas({imageURL}) {
+    const [color, setColor] = useState("#00000");
+    const [drawAction, setDrawAction] = useState(DrawAction.Pen);
+    const [lines, setLines] = useState([]);
+    const image = useMemo(() => {
+        const imageElement = new Image(SIZE / 2, SIZE / 2);
+        imageElement.src = imageURL;
+        return imageElement;
+    }, [imageURL]);
+    const containerRef = useRef(null);
+    const [stageSize, setStageSize] = useState({
+        width: SIZE,
+        height: SIZE
+    });
+
+    useEffect(() => {
+        const handleResize = () => {
+            if (containerRef.current) {
+                const {width, height} = containerRef.current.getBoundingClientRect();
+                setStageSize({width, height});
+            }
+        };
+
+        handleResize(); // Call it initially
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     const stageRef = useRef(null);
 
@@ -31,13 +74,21 @@ export const ImageCanvas = React.memo(function Paint({propImage}) {
     }, []);
 
     const currentShapeRef = useRef();
-    const handleExport =  () => {
-        const dataURL = stageRef?.current.toDataURL({pixelRatio:3});
-        downloadURI(dataURL,"drawn.png")
+    const handleExport = () => {
+        const dataURL = stageRef?.current.toDataURL({pixelRatio: 3});
+        downloadZip(dataURL, "drawn");
     };
+    const handleExportMask = () => {
+        const clonedStage = stageRef.current.getStage().clone();
+        clonedStage.find(".exclude").forEach(node => node.destroy());
+        const dataURL = clonedStage.toDataURL({pixelRatio: 3});
+        downloadZip(dataURL, "mask")
+    }
+
+
     const onStageMouseDown = useCallback(
         (e) => {
-            if (drawAction === DrawAction.Select) return;
+            if (![DrawAction.Pen, DrawAction.Brush].includes(drawAction)) return;
             isPaintRef.current = true;
             const stage = stageRef?.current;
             const pos = stage?.getPointerPosition();
@@ -47,25 +98,28 @@ export const ImageCanvas = React.memo(function Paint({propImage}) {
             currentShapeRef.current = id;
 
             switch (drawAction) {
-                case DrawAction.Scribble: {
-                    setScribbles((prevScribbles) => [
-                        ...prevScribbles,
+                case DrawAction.Brush:
+                case DrawAction.Pen: {
+
+                    setLines((prevLines) => [
+                        ...prevLines,
                         {
                             id,
                             points: [x, y],
                             color,
+                            strokeWidth: strokeWidths[drawAction]
                         },
                     ]);
                     break;
                 }
+                default :
+                    return;
             }
         },
         [drawAction, color]
     );
-
     const onStageMouseMove = useCallback(() => {
-        if (drawAction === DrawAction.Select || !isPaintRef.current) return;
-
+        if (![DrawAction.Pen, DrawAction.Brush].includes(drawAction) || !isPaintRef.current) return;
         const stage = stageRef?.current;
         const id = currentShapeRef.current;
         const pos = stage?.getPointerPosition();
@@ -73,106 +127,104 @@ export const ImageCanvas = React.memo(function Paint({propImage}) {
         const y = pos?.y || 0;
 
         switch (drawAction) {
-            case DrawAction.Scribble: {
-                setScribbles((prevScribbles) =>
-                    prevScribbles?.map((prevScribble) =>
-                        prevScribble.id === id
+            case DrawAction.Brush:
+            case DrawAction.Pen: {
+                setLines((prevLines) =>
+                    prevLines?.map((prevLine) =>
+                        prevLine.id === id
                             ? {
-                                ...prevScribble,
-                                points: [...prevScribble.points, x, y],
+                                ...prevLine,
+                                points: [...prevLine.points, x, y],
                             }
-                            : prevScribble
+                            : prevLine
                     )
                 );
                 break;
             }
-
-
         }
     }, [drawAction]);
-    const [cursorStyle, setCursorStyle]= useState("auto")
-    const updateCursor=()=>{
+    const [cursorStyle, setCursorStyle] = useState("auto")
+    const updateCursor = () => {
         setCursorStyle("crosshair");
     }
-    const revertCursor=()=>{
+    const revertCursor = () => {
         setCursorStyle("auto");
     }
-    const onImportImageClick = useCallback(() => {
-        fileRef?.current && fileRef?.current?.click();
-    }, []);
-    const onImportImageSelect = useCallback(
-        (e) => {
-            if (e.target.files?.[0]) {
-                const imageUrl = URL.createObjectURL(e.target.files?.[0]);
-                const image = new Image(SIZE / 2, SIZE / 2);
-                image.src = imageUrl;
-                setImage(image);
-            }
-            e.target.files = null;
-        },
-        []
-    );
+    const onDrawingTypeChange = (e) => {
+        setDrawAction(e.target.value);
+    }
+
+
     return (
         <div>
-            <input
-                type="file"
-                ref={fileRef}
-                onChange={onImportImageSelect}
-                style={{display: "none"}}
-                accept="image/*"
-            />
-            <Button
-                icon={<Upload />}
-                onClick={onImportImageClick}
-            >
-                Import Image
-            </Button>
-            <Button onClick={handleExport}>Export as PNG</Button>
-            <Stage
-                style={{
-                    cursor: cursorStyle
-                }}
-                height={SIZE}
-                width={SIZE}
-                ref={stageRef}
-                onMouseUp={onStageMouseUp}
-                onMouseDown={onStageMouseDown}
-                onMouseMove={onStageMouseMove}
-                onMouseEnter={updateCursor}
-                onMouseLeave={revertCursor}
-            >
-                <Layer>
-                    <Rect
-                        x={0}
-                        y={0}
-                        height={SIZE}
-                        width={SIZE}
-                        fill="white"
-                        id="bg"
-                    />
-                    {image && (
-                        <KanvaImage
-                            image={image}
-                            x={0}
-                            y={0}
-                            height={SIZE}
-                            width={SIZE}
-                        />
-                    )}
+            <Row>
+                <Col flex={1}>
+                    <Flex vertical>
+                        <ColorPicker showText value={color} onChange={(value, hex) => setColor(hex)}/>
+                        <Radio.Group onChange={onDrawingTypeChange} optionType="button" buttonStyle="solid"
+                                     options={options}/>
+                        <Button onClick={handleExport}>Export</Button>
+                        <Button onClick={handleExportMask}>Export Mask File</Button>
+                    </Flex>
+                </Col>
+                <Col flex={6}>
+                    <div ref={containerRef} style={{background: "white", width: '100%', height: '100%'}}>
+                        <Stage
+                            style={{
+                                cursor: cursorStyle
+                            }}
+                            height={stageSize.height}
+                            width={stageSize.width}
+                            ref={stageRef}
+                            onMouseUp={onStageMouseUp}
+                            onTouchEnd={onStageMouseUp}
+                            onMouseDown={onStageMouseDown}
+                            onTouchStart={onStageMouseDown}
+                            onTouchMove={onStageMouseMove}
+                            onMouseMove={onStageMouseMove}
+                            onMouseEnter={updateCursor}
+                            onMouseLeave={revertCursor}
+                        >
+                            <Layer>
+                                <Rect
+                                    x={0}
+                                    y={0}
+                                    height={stageSize.height}
+                                    width={stageSize.width}
+                                    id="bg"
+                                />
+                                {image && (
+                                    <KanvaImage
+                                        name="exclude"
+                                        image={image}
+                                        x={0}
+                                        y={0}
+                                        height={stageSize.height}
+                                        width={stageSize.width}
+                                    />
+                                )}
+                                {lines.map((line) => (
+                                    <Line
+                                        key={line.id}
+                                        id={line.id}
+                                        lineCap="round"
+                                        lineJoin="round"
+                                        stroke={line?.color}
+                                        strokeWidth={line.strokeWidth}
+                                        points={line.points}
+                                    />
+                                ))}
+                            </Layer>
+                        </Stage>
+                    </div>
 
-                    {scribbles.map((scribble) => (
-                        <Line
-                            key={scribble.id}
-                            id={scribble.id}
-                            lineCap="round"
-                            lineJoin="round"
-                            stroke={scribble?.color}
-                            strokeWidth={2}
-                            points={scribble.points}
-                        />
-                    ))}
-                </Layer>
-            </Stage>
+                </Col>
+            </Row>
+
         </div>
     );
-});
+}
+
+ImageCanvas.propTypes = {
+    imageURL: PropTypes.string
+}
